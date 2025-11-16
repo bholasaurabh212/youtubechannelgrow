@@ -5,6 +5,7 @@ import random
 import asyncio
 import requests
 import threading
+from flask import Flask
 from playwright.async_api import async_playwright
 
 # === CONFIGURATION ===
@@ -28,6 +29,8 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
 ]
 
+
+app = Flask(__name__)
 seen_jobs = set()
 bot_active = False  # Bot starts inactive
 
