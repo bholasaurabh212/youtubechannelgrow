@@ -94,79 +94,19 @@ def job_loop():
             # fetch_jobs(token)
 
             print("🕓 Sleeping 30 mins before next check.\n")
+            send_telegram_message("🕓 Sleeping 30 mins before next check.\n")
             time.sleep(1800)
 
         except Exception as e:
             print(f"⚠️ Loop error: {e}")
             time.sleep(180)
 
-# ====================================================================================
-# === NEW FEATURE: YOUTUBE SEARCH TASK (RUNS IN PARALLEL, STOPS ON FATAL ERROR) ======
-# ====================================================================================
-
-# --- One-time Playwright YouTube search ---
-async def yt_search_once():
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-
-            await page.goto("https://www.youtube.com")
-
-            await page.wait_for_selector("input#search")
-            await page.fill("input#search", "no limit of masti")
-            await page.click("button#search-icon-legacy")
-
-            await page.wait_for_selector("ytd-video-renderer", timeout=15000)
-
-            await browser.close()
-            return True
-
-    except Exception as e:
-        print("❌ Fatal YouTube search error:", e)
-        return False
-
-# --- Loop every 5 minutes, STOP on fatal error ---
-def youtube_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    while True:
-        print("🔎 Running YouTube search...")
-
-        success = loop.run_until_complete(yt_search_once())
-
-        if success:
-            send_telegram_message("✅ YouTube search completed successfully!")
-            print("✅ YouTube search completed successfully!")
-        else:
-            send_telegram_message("❌ YouTube search failed. Task stopped permanently due to fatal error.")
-            print("❌ YouTube task stopped permanently due to fatal error.")
-            break  # do NOT retry — your chosen Option 2
-
-        print("⏳ Waiting 5 minutes for next search...")
-        time.sleep(300)
-
-# === FLASK ENDPOINTS ===
-@app.route("/")
-def home():
-    return "✅ Bot running."
-
-@app.route("/forcefetch")
-def forcefetch():
-    token = asyncio.run(get_auth_token())
-    if not token:
-        token = "Bearer Status|unauthenticated|Session|exampleToken"
-    # fetch_jobs(token)
-    return "Manual fetch completed."
 
 # === START EVERYTHING ===
 if __name__ == "__main__":
     # Start original bot loop
     threading.Thread(target=job_loop, daemon=True).start()
 
-    # Start YouTube loop in parallel
-    threading.Thread(target=youtube_loop, daemon=True).start()
-
     # Run Flask server
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
