@@ -9,7 +9,8 @@ from flask import Flask
 from playwright.async_api import async_playwright
 
 # === CONFIGURATION ===
-JOB_PAGE_URL = "https://www.youtube.com/watch?v=GwCsZa-6c9I&list=PLgl-4XwWe41Vcidfx8FrtxQIGVAfjOeXR"
+GRAPHQL_URL = "https://qy64m4juabaffl7tjakii4gdoa.appsync-api.eu-west-1.amazonaws.com/graphql"
+JOB_PAGE_URL = "https://www.jobsatamazon.co.uk/app#/jobSearch?query=Warehouse%20Operative&locale=en-GB"
 
 # === TELEGRAM SETTINGS (secure from Render env) ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -17,7 +18,7 @@ CHAT_IDS = os.getenv("TELEGRAM_CHAT_IDS", "")
 CHAT_IDS = [chat.strip() for chat in CHAT_IDS.split(",") if chat.strip()]
 
 if not TELEGRAM_BOT_TOKEN or not CHAT_IDS:
-    print("\n⚠️ Missing Telegram credentials — check Render env variables.")
+    print("f\n⚠️ Missing Telegram credentials — check Render env variables.")
 else:
     print(f"\n✅ Telegram config loaded ({len(CHAT_IDS)} chat IDs).")
 
@@ -32,7 +33,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15 Edg/129.0.0.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
 ]
 
 seen_jobs = set()
@@ -44,11 +44,13 @@ def send_telegram_message(message: str):
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
             payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-            requests.post(url, data=payload, timeout=10)
+            response = requests.post(url, data=payload, timeout=10)
+            if response.status_code != 200:
+                print(f"\n⚠️ Telegram send error {chat_id}: {response.text}")
         except Exception as e:
-            print(f"⚠️ Telegram send exception: {e}")
+            print(f"\n⚠️ Telegram send exception to {chat_id}: {e}")
 
-# === PLAYWRIGHT TOKEN FETCH ===
+# === FETCH TOKEN USING PLAYWRIGHT ===
 async def get_auth_token():
     try:
         proxy = random.choice(PROXIES)
@@ -57,8 +59,18 @@ async def get_auth_token():
         print(f"🧭 Using User-Agent: {agent}")
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, proxy={"server": proxy})
-            context = await browser.new_context(user_agent=agent)
+            browser = await p.chromium.launch(
+                headless=True,
+                proxy={"server": proxy}
+            )
+            context = await browser.new_context(
+                user_agent=agent,
+                extra_http_headers={
+                    "Accept": "text/html",
+                    "Referer": "https://www.jobsatamazon.co.uk/"
+                }
+            )
+
             page = await context.new_page()
             await page.goto(JOB_PAGE_URL, wait_until="load")
 
@@ -67,13 +79,88 @@ async def get_auth_token():
 
             for cookie in cookies:
                 if "session" in cookie["name"].lower():
+                    print(f"\n✅ Session cookie found: {cookie['name']}")
                     return f"Bearer {cookie['value']}"
 
     except Exception as e:
-        print(f"❌ Playwright token fetch failed: {e}")
+        print(f"\n❌ Playwright token fetch failed: {e}")
     return None
 
-# === MAIN JOB LOOP (YOUR ORIGINAL BOT) ===
+# === FETCH JOB DATA ===
+def fetch_jobs(auth_token: str):
+    payload = {
+        "operationName": "searchJobCardsByLocation",
+        "variables": {
+            "searchJobRequest": {
+                "locale": "en-GB",
+                "country": "United Kingdom",
+                "keyWords": "Warehouse Operative",
+                "equalFilters": [],
+                "containFilters": [{"key": "isPrivateSchedule", "val": ["true", "false"]}],
+                "rangeFilters": [],
+                "orFilters": [],
+                "dateFilters": [],
+                "sorters": [{"fieldName": "totalPayRateMax", "ascending": "false"}],
+                "pageSize": 20,
+                "consolidateSchedule": True
+            }
+        },
+        "query": """
+        query searchJobCardsByLocation($searchJobRequest: SearchJobRequest!) {
+          searchJobCardsByLocation(searchJobRequest: $searchJobRequest) {
+            jobCards {
+              jobId
+              jobTitle
+              city
+              state
+              postalCode
+              jobType
+              employmentType
+              totalPayRateMax
+            }
+          }
+        }
+        """
+    }
+
+    headers = {
+        "Authorization": auth_token,
+        "Content-Type": "application/json",
+        "Origin": "https://www.jobsatamazon.co.uk",
+        "Referer": "https://www.jobsatamazon.co.uk/",
+        "User-Agent": random.choice(USER_AGENTS)
+    }
+
+    try:
+        response = requests.post(GRAPHQL_URL, headers=headers, json=payload, timeout=15)
+        if response.status_code != 200:
+            print(f"\n⚠️ GraphQL request failed: {response.status_code}")
+            return
+
+        data = response.json()
+        job_cards = data.get("data", {}).get("searchJobCardsByLocation", {}).get("jobCards", [])
+        print(f"\n📦 Found {len(job_cards)} jobs.")
+
+        for job in job_cards:
+            job_id = job.get("jobId")
+            if job_id not in seen_jobs:
+                seen_jobs.add(job_id)
+                msg = (
+                    f"💼 *{job.get('jobTitle')}*\n"
+                    f"📍 {job.get('city')}, {job.get('state')} {job.get('postalCode')}\n"
+                    f"💰 £{job.get('totalPayRateMax')}/hr\n"
+                    f"🕒 {job.get('jobType')} | {job.get('employmentType')}\n"
+                    f"🔗 [View Job](https://www.jobsatamazon.co.uk/app#/jobDetail?jobId={job_id}&locale=en-GB)"
+                )
+                print(f"\n🔔 New job found:", job.get("jobTitle"))
+                send_telegram_message(msg)
+
+        print(f"\n✅ Job fetch complete.")
+
+    except Exception as e:
+        print(f"\n⚠️ Fetch error: {e}")
+
+# === BACKGROUND JOB LOOP (with safe delay) ===
 def job_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -82,31 +169,55 @@ def job_loop():
 
     while True:
         try:
-            print("⏳ Connected Successfully")
-            send_telegram_message("⏳ Connected Successfully")
-
+            print(f"\n⏳ Starting scheduled Amazon job check...")
             token = loop.run_until_complete(get_auth_token())
             if not token:
-                send_telegram_message("⚠️ Using fallback token.")
+                print(f"\n⚠️ Using fallback token.")
                 token = DEFAULT_TOKEN
 
-            # Your function to fetch jobs (not included in snippet)
-            # fetch_jobs(token)
-
-            print("🕓 Sleeping 30 mins before next check.\n")
-            send_telegram_message("🕓 Sleeping 30 mins before next check.\n")
-            time.sleep(1800)
-
+            fetch_jobs(token)
+            print("f\n🕓 Sleeping 30 mins before next check.\n")
+            time.sleep(1200)  # 30 mins delay
         except Exception as e:
-            print(f"⚠️ Loop error: {e}")
-            time.sleep(180)
+            print(f"\n⚠️ Loop error: {e}")
+            time.sleep(180)  # wait 5 mins on error before retry
 
+# === KEEP-ALIVE THREAD (Render idle prevention) ===
+def keep_alive():
+    url = os.getenv("RENDER_URL")
+    if not url:
+        return
+    while True:
+        try:
+            requests.get(url, timeout=10)
+            print(f"\n🌍 Keep-alive ping sent.")
+        except:
+            print(f"\n⚠️ Keep-alive failed.")
+        time.sleep(600)
 
-# === START EVERYTHING ===
+# === FLASK ENDPOINTS ===
+@app.route("/")
+def home():
+    return "✅ Amazon Job Bot is running online."
+    offcheck = (f"\n✅ Amazon Job Bot is running Online..\n" "[☕️ Fuel this bot for running...] (https://buymeacoffee.com/ukjobs)")
+    send_telegram_message(offcheck)
+
+@app.route("/forcefetch")
+def forcefetch():
+    token = asyncio.run(get_auth_token())
+    if not token:
+        token = "Bearer Status|unauthenticated|Session|exampleToken"
+    fetch_jobs(token)
+    return "\n✅ Manual job fetch completed."
+
+# === START APP ===
 if __name__ == "__main__":
-    # Start original bot loop
     threading.Thread(target=job_loop, daemon=True).start()
-
-    # Run Flask server
+    threading.Thread(target=keep_alive, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
+
+
+
+
 
