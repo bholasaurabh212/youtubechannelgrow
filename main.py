@@ -9,8 +9,7 @@ from flask import Flask
 from playwright.async_api import async_playwright
 
 # === CONFIGURATION ===
-GRAPHQL_URL = "https://qy64m4juabaffl7tjakii4gdoa.appsync-api.eu-west-1.amazonaws.com/graphql"
-JOB_PAGE_URL = "https://www.jobsatamazon.co.uk/app#/jobSearch?query=Warehouse%20Operative&locale=en-GB"
+JOB_PAGE_URL = "https://www.youtube.com/@NoLimitOfMasti-Fun"
 
 # === TELEGRAM SETTINGS (secure from Render env) ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -67,7 +66,7 @@ async def get_auth_token():
                 user_agent=agent,
                 extra_http_headers={
                     "Accept": "text/html",
-                    "Referer": "https://www.jobsatamazon.co.uk/"
+                    "Referer": "https://www.youtube.com/"
                 }
             )
 
@@ -86,80 +85,6 @@ async def get_auth_token():
         print(f"\n❌ Playwright token fetch failed: {e}")
     return None
 
-# === FETCH JOB DATA ===
-def fetch_jobs(auth_token: str):
-    payload = {
-        "operationName": "searchJobCardsByLocation",
-        "variables": {
-            "searchJobRequest": {
-                "locale": "en-GB",
-                "country": "United Kingdom",
-                "keyWords": "Warehouse Operative",
-                "equalFilters": [],
-                "containFilters": [{"key": "isPrivateSchedule", "val": ["true", "false"]}],
-                "rangeFilters": [],
-                "orFilters": [],
-                "dateFilters": [],
-                "sorters": [{"fieldName": "totalPayRateMax", "ascending": "false"}],
-                "pageSize": 20,
-                "consolidateSchedule": True
-            }
-        },
-        "query": """
-        query searchJobCardsByLocation($searchJobRequest: SearchJobRequest!) {
-          searchJobCardsByLocation(searchJobRequest: $searchJobRequest) {
-            jobCards {
-              jobId
-              jobTitle
-              city
-              state
-              postalCode
-              jobType
-              employmentType
-              totalPayRateMax
-            }
-          }
-        }
-        """
-    }
-
-    headers = {
-        "Authorization": auth_token,
-        "Content-Type": "application/json",
-        "Origin": "https://www.jobsatamazon.co.uk",
-        "Referer": "https://www.jobsatamazon.co.uk/",
-        "User-Agent": random.choice(USER_AGENTS)
-    }
-
-    try:
-        response = requests.post(GRAPHQL_URL, headers=headers, json=payload, timeout=15)
-        if response.status_code != 200:
-            print(f"\n⚠️ GraphQL request failed: {response.status_code}")
-            return
-
-        data = response.json()
-        job_cards = data.get("data", {}).get("searchJobCardsByLocation", {}).get("jobCards", [])
-        print(f"\n📦 Found {len(job_cards)} jobs.")
-
-        for job in job_cards:
-            job_id = job.get("jobId")
-            if job_id not in seen_jobs:
-                seen_jobs.add(job_id)
-                msg = (
-                    f"💼 *{job.get('jobTitle')}*\n"
-                    f"📍 {job.get('city')}, {job.get('state')} {job.get('postalCode')}\n"
-                    f"💰 £{job.get('totalPayRateMax')}/hr\n"
-                    f"🕒 {job.get('jobType')} | {job.get('employmentType')}\n"
-                    f"🔗 [View Job](https://www.jobsatamazon.co.uk/app#/jobDetail?jobId={job_id}&locale=en-GB)"
-                )
-                print(f"\n🔔 New job found:", job.get("jobTitle"))
-                send_telegram_message(msg)
-
-        print(f"\n✅ Job fetch complete.")
-
-    except Exception as e:
-        print(f"\n⚠️ Fetch error: {e}")
-
 # === BACKGROUND JOB LOOP (with safe delay) ===
 def job_loop():
     loop = asyncio.new_event_loop()
@@ -169,7 +94,7 @@ def job_loop():
 
     while True:
         try:
-            print(f"\n⏳ Starting scheduled Amazon job check...")
+            print(f"\n⏳ Connected Successfully")
             token = loop.run_until_complete(get_auth_token())
             if not token:
                 print(f"\n⚠️ Using fallback token.")
@@ -181,19 +106,6 @@ def job_loop():
         except Exception as e:
             print(f"\n⚠️ Loop error: {e}")
             time.sleep(180)  # wait 5 mins on error before retry
-
-# === KEEP-ALIVE THREAD (Render idle prevention) ===
-def keep_alive():
-    url = os.getenv("RENDER_URL")
-    if not url:
-        return
-    while True:
-        try:
-            requests.get(url, timeout=10)
-            print(f"\n🌍 Keep-alive ping sent.")
-        except:
-            print(f"\n⚠️ Keep-alive failed.")
-        time.sleep(600)
 
 # === FLASK ENDPOINTS ===
 @app.route("/")
@@ -213,8 +125,8 @@ def forcefetch():
 # === START APP ===
 if __name__ == "__main__":
     threading.Thread(target=job_loop, daemon=True).start()
-    threading.Thread(target=keep_alive, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
 
 
