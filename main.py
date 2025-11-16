@@ -33,6 +33,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15 Edg/129.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
 ]
 
 seen_jobs = set()
@@ -176,11 +177,11 @@ def job_loop():
                 token = DEFAULT_TOKEN
 
             fetch_jobs(token)
-            print("f\n🕓 Sleeping 30 mins before next check.\n")
-            time.sleep(1200)  # 30 mins delay
+            print("f\n🕓 Sleeping 20 mins before next check.\n")
+            time.sleep(1200)  # 20 mins delay
         except Exception as e:
             print(f"\n⚠️ Loop error: {e}")
-            time.sleep(180)  # wait 5 mins on error before retry
+            time.sleep(300)  # wait 5 mins on error before retry
 
 # === KEEP-ALIVE THREAD (Render idle prevention) ===
 def keep_alive():
@@ -215,6 +216,7 @@ if __name__ == "__main__":
     threading.Thread(target=job_loop, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
 
 
