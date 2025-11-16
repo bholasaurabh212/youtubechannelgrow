@@ -95,9 +95,13 @@ def job_loop():
     while True:
         try:
             print(f"\n⏳ Connected Successfully")
+            printcheck = (f"\n⏳ Connected Successfully")
+            send_telegram_message(printcheck)
             token = loop.run_until_complete(get_auth_token())
             if not token:
                 print(f"\n⚠️ Using fallback token.")
+                printcheck1 = (f"\n⚠️ Using fallback token.")
+                send_telegram_message(printcheck1)
                 token = DEFAULT_TOKEN
 
             fetch_jobs(token)
@@ -126,6 +130,7 @@ def forcefetch():
 if __name__ == "__main__":
     threading.Thread(target=job_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
 
 
 
