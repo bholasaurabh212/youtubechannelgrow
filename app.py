@@ -172,5 +172,15 @@ def telegram_poll():
 
 # === MAIN START ===
 if __name__ == "__main__":
-    print("🤖 Bot ready. Waiting for /start command...")
+     # Start original bot loop
+    threading.Thread(target=job_loop, daemon=True).start()
+
+    # Run Flask server
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
+    print(f"🤖 Bot ready. Waiting for /start command...\n")
+    send_telegram_message("🤖 Bot ready. Waiting for /start command...\n")
     telegram_poll()
+
+
+
