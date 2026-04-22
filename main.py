@@ -177,11 +177,11 @@ def job_loop():
                 token = DEFAULT_TOKEN
 
             fetch_jobs(token)
-            print("f\n🕓 Sleeping 20 mins before next check.\n")
-            time.sleep(1200)  # 20 mins delay
+            print("f\n🕓 Sleeping 2 mins before next check.\n")
+            time.sleep(120)  # 2 mins delay
         except Exception as e:
             print(f"\n⚠️ Loop error: {e}")
-            time.sleep(300)  # wait 5 mins on error before retry
+            time.sleep(60)  # wait 60 secs on error before retry
 
 # === KEEP-ALIVE THREAD (Render idle prevention) ===
 def keep_alive():
